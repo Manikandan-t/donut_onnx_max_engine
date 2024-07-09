@@ -48,6 +48,17 @@ class OnnxPredictor:
             ]
         )
 
+    def prepare_batch_input(self, img, prompts):
+        # Tokenize all prompts
+        tokenized = self.tokenizer(prompts, add_special_tokens=False, padding=True, return_tensors="np")
+        input_ids = tokenized.input_ids.astype(dtype='int32')
+        attention_mask = tokenized.attention_mask.astype(dtype='int32')
+
+        # Prepare image input (single image for all prompts)
+        encoder_input_ids = self.prepare_input(Image.fromarray(img))
+
+        return input_ids, attention_mask, encoder_input_ids
+
     def prepare_input(self, img):
         """
         Convert PIL Image to tensor according to specified input_size after following steps below:
@@ -78,6 +89,81 @@ class OnnxPredictor:
             delta_height - pad_height,
         )
         return np.array(self.to_tensor(ImageOps.expand(img, padding)))[None, :]
+
+    def generate_batch(self, img, prompts, max_length=None):
+        if max_length is None:
+            max_length = self.max_length
+
+        results = []
+
+        # Prepare image input (single image for all prompts)
+        encoder_input_ids = self.prepare_input(Image.fromarray(img))
+
+        # Run encoder once
+        out_encoder = self.encoder.run(None, {'pixel_values': encoder_input_ids})[0]
+
+        for prompt in prompts:
+            input_ids = self.tokenizer(prompt, add_special_tokens=False, return_tensors="np").input_ids.astype(
+                dtype='int32')
+
+            pad_token_id = self.tokenizer.pad_token_id
+            eos_token_id = self.tokenizer.eos_token_id
+
+            unfinished_sequences = np.ones((1, 1), dtype='int32')
+
+            logits_processor = MinLengthLogitsProcessor(min_length=0, eos_token_id=eos_token_id)
+
+            if isinstance(eos_token_id, int):
+                eos_token_id = [eos_token_id]
+            eos_token_id_tensor = np.array(eos_token_id) if eos_token_id is not None else None
+
+            past_key_values = None
+            scores = ()
+
+            while True:
+                if past_key_values is None:
+                    out_decoder = self.decoder.run(None, {
+                        'input_ids': input_ids,
+                        'encoder_hidden_states': out_encoder
+                    })
+                    logits = out_decoder[0]
+                    past_key_values = {'past_key_value_input_' + str(k): out_decoder[k + 1] for k in
+                                       range(len(out_decoder[1:]))}
+                else:
+                    out_decoder = self.decoder_with_past.run(None, {
+                        'input_ids': input_ids[:, -1:],
+                        **past_key_values
+                    })
+                    logits = out_decoder[0]
+                    past_key_values = {'past_key_value_input_' + str(i): pkv for i, pkv in enumerate(out_decoder[1:])}
+
+                next_token_logits = logits[:, -1, :]
+                next_tokens_scores = logits_processor(input_ids, next_token_logits)
+                next_tokens = np.argmax(next_tokens_scores, axis=-1).astype(dtype='int32')
+
+                scores += (next_tokens_scores,)
+
+                if eos_token_id is not None:
+                    next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
+
+                if eos_token_id_tensor is not None:
+                    unfinished_sequences = unfinished_sequences * (
+                            np.tile(next_tokens, (1, len(eos_token_id_tensor))) != eos_token_id_tensor
+                    ).any(axis=1, keepdims=True)
+
+                # Ensure next_tokens is 2D before concatenation
+                next_tokens = next_tokens.reshape(input_ids.shape[0], 1)
+                input_ids = np.concatenate([input_ids, next_tokens], axis=-1)
+
+                if unfinished_sequences.sum() == 0 or input_ids.shape[-1] >= max_length:
+                    break
+
+            sequence = self.tokenizer.decode(input_ids[0])
+            sequence = sequence.replace(self.tokenizer.eos_token, "").replace(self.tokenizer.pad_token, "")
+            sequence = re.sub(r"<.*?>", "", sequence, count=1).strip()  # remove first task start token
+            results.append(self.token2json(sequence, self.tokenizer))
+
+        return results
 
     def generate(self, img, prompts, max_length=None):
         if max_length is None:
@@ -235,7 +321,7 @@ async def generate(questions: str, image: UploadFile = File(...)):
         # Generate prompts for each question
         prompts = [task_prompt.replace("{user_input}", question) for question in questions if len(question) > 0]
 
-        inference_res_arr = predictor.generate(img_arr, prompts)
+        inference_res_arr = predictor.generate_batch(img_arr, prompts)
 
         # Display results for each question
         for question, result in zip(questions, inference_res_arr):
