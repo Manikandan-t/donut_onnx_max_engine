@@ -1,6 +1,6 @@
-from onnx_donut.exporter import export_onnx
-from onnx_donut.predictor import OnnxPredictor
-from onnx_donut.quantizer import quantize
+from src.onnx_donut.exporter import export_onnx
+from src.onnx_donut.predictor import OnnxPredictor
+from src.onnx_donut.quantizer import quantize
 import numpy as np
 from PIL import Image
 

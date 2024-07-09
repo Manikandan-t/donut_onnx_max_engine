@@ -104,25 +104,19 @@ class OnnxPredictor:
             past_key_values = None
             stop = False
 
-            with open('/home/manikandan.tm@zucisystems.com/workspace/onnx-donut/script/max_data.txt',
-                      'a') as file:
-                file.write(str(out_encoder) + '\n\n')
-
             while not stop:
-                #if past_key_values is None:
-                out_decoder = self.decoder.run(None, {'input_ids': input_ids, 'encoder_hidden_states': out_encoder})
-                logits = out_decoder[0]
+                if past_key_values is None:
+                    out_decoder = self.decoder.run(None, {'input_ids': input_ids, 'encoder_hidden_states': out_encoder})
+                    logits = out_decoder[0]
 
+                    past_key_values = {'past_key_value_input_' + str(k): out_decoder[k + 1] for k in
+                                       range(len(out_decoder[1:]))}
 
-                # print(logits)
-                # past_key_values = {'past_key_value_input_' + str(k): out_decoder[k + 1] for k in
-                #                    range(len(out_decoder[1:]))}
-
-                # else:
-                #     out_decoder = self.decoder_with_past.run(None, {'input_ids': input_ids[:, -1:],
-                #                                                     **past_key_values})
-                #     logits = out_decoder[0]
-                #     past_key_values = {'past_key_value_input_' + str(i): pkv for i, pkv in enumerate(out_decoder[1:])}
+                else:
+                    out_decoder = self.decoder_with_past.run(None, {'input_ids': input_ids[:, -1:],
+                                                                    **past_key_values})
+                    logits = out_decoder[0]
+                    past_key_values = {'past_key_value_input_' + str(i): pkv for i, pkv in enumerate(out_decoder[1:])}
                 next_token_logits = logits[:, -1, :]
 
                 next_tokens_scores = logits_processor(input_ids, next_token_logits)
