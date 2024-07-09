@@ -210,42 +210,40 @@ def process_vqa(input_file):
     return np.array(Image.open(input_file).convert('RGB'))
 
 
-if __name__ == "__main__":
+dst_folder = "/home/manikandan.tm@zucisystems.com/workspace/onnx-donut/export-int8"
+predictor = OnnxPredictor(model_folder=dst_folder)
 
-    dst_folder = "/home/manikandan.tm@zucisystems.com/workspace/onnx-donut/export-int8"
-    start_time = time.time()
 
-    predictor = OnnxPredictor(model_folder=dst_folder)
+@app.post("/predict")
+async def generate(questions: str, image: UploadFile = File(...)):
+    try:
+        start_time = time.time()
 
-    img_path = "/home/manikandan.tm@zucisystems.com/data/agadia_itemised/pdf_to_image/SYNT_166564144/SYNT_166564144_1.jpg"
-    img_arr = process_vqa(img_path)
+        image_data = await image.read()
+        img_arr = np.array(Image.open(io.BytesIO(image_data)).convert('RGB'))
 
-    # List of questions
-    questions = [
-        "what is the patient name?"
-        ,
-        "what is the prescriber name?",
-        "what is the value of prescriber NPI",
-        # "what is the drug name?",
-        # "what is the group number"
-    ]
+        questions = ast.literal_eval(questions)
 
-    # Task prompt template
-    task_prompt = "<s_docvqa><s_question>{user_input}</s_question><s_answer>"
+        print(f"length of questions {len(questions)}")
 
-    # Generate prompts for each question
-    prompts = [task_prompt.replace("{user_input}", question) for question in questions if len(question) > 0]
+        # Task prompt template
+        task_prompt = "<s_docvqa><s_question>{user_input}</s_question><s_answer>"
 
-    inference_res_arr = predictor.generate(img_arr, prompts)
+        # Generate prompts for each question
+        prompts = [task_prompt.replace("{user_input}", question) for question in questions if len(question) > 0]
 
-    # Display results for each question
-    for question, result in zip(questions, inference_res_arr):
-        print(result)
+        inference_res_arr = predictor.generate(img_arr, prompts)
 
-    end_time = time.time()
+        # Display results for each question
+        for question, result in zip(questions, inference_res_arr):
+            print(result)
 
-    # Calculate and display execution time
-    execution_time = end_time - start_time
-    print(f"Total execution time: {execution_time} seconds")
+        end_time = time.time()
 
-    gc.collect()
+        # Calculate and display execution time
+        execution_time = end_time - start_time
+        print(f"Total execution time: {execution_time} seconds")
+        return inference_res_arr
+
+    finally:
+        gc.collect()
