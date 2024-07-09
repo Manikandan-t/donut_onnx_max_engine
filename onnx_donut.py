@@ -1,17 +1,20 @@
+import ast
 import gc
-
-import onnxruntime
-import os
-import time
-from transformers import XLMRobertaTokenizerFast, MinLengthLogitsProcessor
-import numpy as np
-from torchvision.transforms.functional import rotate, resize
-from PIL import Image, ImageOps
-
-from torchvision import transforms
-import re
+import io
 import json
+import os
+import re
+import time
 
+import numpy as np
+import onnxruntime
+from PIL import Image, ImageOps
+from fastapi import FastAPI, UploadFile, File
+from torchvision import transforms
+from torchvision.transforms.functional import rotate, resize
+from transformers import XLMRobertaTokenizerFast, MinLengthLogitsProcessor
+
+app = FastAPI()
 
 class OnnxPredictor:
     def __init__(self, model_folder, sess_options=None, providers=None):
