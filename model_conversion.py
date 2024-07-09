@@ -7,29 +7,17 @@ from PIL import Image
 # Hugging Face model card or folder
 model_path = "naver-clova-ix/donut-base-finetuned-docvqa"
 
-# Image path to run on
-img_path = "/path/to/your/image.png"
-
 # Folder where the exported model will be stored
+# make necessary changes for custom path
 dst_folder = "converted_donut"
+
+# Folder where the exported int8 model will be stored
+dst_folder_int8 = "converted_donut_int8"
 
 # Export from Pytorch to ONNX
 export_onnx(model_path, dst_folder, opset_version=16)
+print("Conversion to ONNX model Done...")
 
 # Quantize your model to int8
-quantize(dst_folder, dst_folder)
-
-# Read image
-img = np.array(Image.open(img_path).convert('RGB'))
-
-# Instantiate ONNX predictor
-predictor = OnnxPredictor(model_folder=dst_folder)
-
-# Write your prompt accordingly to the model you use
-prompt = f"<s_docvqa><s_question>what is the title?</s_question><s_answer>"
-
-# Run prediction
-out = predictor.generate(img, prompt)
-
-# Display prediction
-print(out)
+quantize(dst_folder, dst_folder_int8)
+print("Quantize to ONNX model int8 Done...")
